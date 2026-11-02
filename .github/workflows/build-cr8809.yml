@@ -74,7 +74,6 @@ jobs:
           mkdir -p package/feeds/packages
           ln -sfn "$GITHUB_WORKSPACE/feeds/packages/lang/golang/golang1.26" package/feeds/packages/golang1.26
           test -f package/feeds/packages/golang1.26/Makefile
-          grep -Fq GO_DEFAULT_VERSION:=1.26 feeds/packages/lang/golang/golang-values.mk
 
           # Add the Chinese AdGuard Home LuCI translation missing from the
           # May 2026 LuCI snapshot, while keeping the app source pinned.

@@ -3,7 +3,7 @@ name: Build CR8809 ImmortalWrt
 on:
   workflow_dispatch:
   push:
-    branches: [ "build/cr8809-custom" ]
+    branches: ["build/cr8809-custom"]
     paths:
       - "configs/**"
       - ".github/workflows/build-cr8809.yml"
@@ -27,8 +27,6 @@ jobs:
           ref: 2db347236cb6fa1ca9fea893d93b1cbc6085e073
           fetch-depth: 1
 
-      # Checkout the builder repo AFTER zcop: checking out zcop at the workspace
-      # root initializes a new Git worktree and removes pre-existing contents.
       - name: Checkout builder configuration
         uses: actions/checkout@v4
         with:
@@ -46,7 +44,6 @@ jobs:
           set -euxo pipefail
           ./scripts/feeds update -a
 
-          # Feed clones are shallow; explicitly fetch the exact pinned commits.
           git -C feeds/packages fetch --depth=1 origin 39f4c789babdc98a9f13205b96301842f2d1a9ec
           git -C feeds/luci fetch --depth=1 origin 55a4b33aafe74aeda6984f80d98750286204dd79
           git -C feeds/routing fetch --depth=1 origin 776e7160636a7f1add27483ac926dadeb248bb65
@@ -67,21 +64,17 @@ jobs:
 
           ./scripts/feeds install -a
 
-          # AdGuard Home 0.107.74 requires Go >= 1.26.2. The packages feed
-          # provides golang1.26, but the feed installer did not expose its
-          # versioned host package in this zcop build tree. Add the package
-          # directory explicitly so golang/host resolves to Go 1.26.2.
+          # Expose the versioned Go host package required by AdGuard Home 0.107.74.
           mkdir -p package/feeds/packages
           ln -sfn "$GITHUB_WORKSPACE/feeds/packages/lang/golang/golang1.26" package/feeds/packages/golang1.26
           test -f package/feeds/packages/golang1.26/Makefile
 
-          # Add the Chinese AdGuard Home LuCI translation missing from the
-          # May 2026 LuCI snapshot, while keeping the app source pinned.
+          # Add the Chinese AdGuard Home LuCI translation missing from this pinned LuCI snapshot.
           mkdir -p feeds/luci/applications/luci-app-adguardhome/po/zh_Hans
           curl -fL --retry 3 --connect-timeout 30 -o feeds/luci/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po https://raw.githubusercontent.com/immortalwrt/luci/6da86dba37ad73cdde635f827db29ce275aebe48/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po
           test -s feeds/luci/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po
 
-          # OpenClash's package Makefile is one directory below its Git repo root.
+          # OpenClash package Makefile lives one directory below its Git repository root.
           git clone --depth 1 --branch v0.47.088 https://github.com/vernesong/OpenClash.git /tmp/OpenClash
           test -f /tmp/OpenClash/luci-app-openclash/Makefile
           mkdir -p package/custom
@@ -109,209 +102,14 @@ jobs:
       - name: Download sources
         run: make download -j8
 
-      - name: Build firmware
-        shell: bash
-        run: |
-          set -o pipefail
-          make -j"$(nproc)" V=s 2>&1 | tee build.log
-
-      - name: Validate image and packages
+      - name: Build and verify Go 1.26.2 host toolchain
         shell: bash
         run: |
           set -euxo pipefail
-          find bin/targets/qualcommax/ipq50xx -maxdepth 1 -type f -printf '%f %s bytes\\n'
-          UBI=$(find bin/targets/qualcommax/ipq50xx -maxdepth 1 -name '*redmi_ax3000*squashfs-factory.ubi' -print -quit)
-          test -n "$UBI"
-          SIZE=$(stat -c '%s' "$UBI")
-          echo "Factory UBI size: $SIZE bytes"
-          test "$SIZE" -le 37748736
-          sha256sum "$UBI" | tee firmware.sha256
-          cp "$UBI" cr8809-immortalwrt-custom.ubi
-          cp build.config cr8809-build.config
-
-      - name: Upload firmware and build evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: cr8809-immortalwrt-${{ github.run_number }}
-          path: |
-            cr8809-immortalwrt-custom.ubi
-            firmware.sha256
-            cr8809-build.config
-            build.log
-            bin/targets/qualcommax/ipq50xx/packages/
-          if-no-files-found: error
-          retention-days: 30
- feeds/packages/lang/golang/golang-values.mk
-
-          # Add the Chinese AdGuard Home LuCI translation missing from the
-          # May 2026 LuCI snapshot, while keeping the app source pinned.
-          mkdir -p feeds/luci/applications/luci-app-adguardhome/po/zh_Hans
-          curl -fL --retry 3 --connect-timeout 30 -o feeds/luci/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po https://raw.githubusercontent.com/immortalwrt/luci/6da86dba37ad73cdde635f827db29ce275aebe48/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po
-          test -s feeds/luci/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po
-
-          # OpenClash's package Makefile is one directory below its Git repo root.
-          git clone --depth 1 --branch v0.47.088 https://github.com/vernesong/OpenClash.git /tmp/OpenClash
-          test -f /tmp/OpenClash/luci-app-openclash/Makefile
-          mkdir -p package/custom
-          cp -a /tmp/OpenClash/luci-app-openclash package/custom/luci-app-openclash
-          mkdir -p package/custom/luci-app-openclash/root/etc/openclash/core
-          curl -fL --retry 3 --connect-timeout 30 -o /tmp/mihomo-arm64.tar.gz https://raw.githubusercontent.com/vernesong/OpenClash/core/master/meta/clash-linux-arm64.tar.gz
-          tar -tzf /tmp/mihomo-arm64.tar.gz | grep -qx clash
-          tar -xzf /tmp/mihomo-arm64.tar.gz -C /tmp clash
-          install -m 0755 /tmp/clash package/custom/luci-app-openclash/root/etc/openclash/core/clash_meta
-
-          test -f feeds/packages/net/adguardhome/Makefile
-          test -f feeds/luci/applications/luci-app-adguardhome/Makefile
-          test -f package/custom/luci-app-openclash/Makefile
-
-      - name: Configure CR8809
-        run: |
-          cp builder/configs/cr8809.config .config
-          make defconfig
-          ./scripts/diffconfig.sh > build.config
-          grep -q 'CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_redmi_ax3000=y' .config
-          grep -q 'CONFIG_PACKAGE_luci-app-openclash=y' .config
-          grep -q 'CONFIG_PACKAGE_adguardhome=y' .config
-          grep -q 'CONFIG_PACKAGE_luci-app-adguardhome=y' .config
-
-      - name: Download sources
-        run: make download -j8
-
-      - name: Build firmware
-        shell: bash
-        run: |
-          set -o pipefail
-          make -j"$(nproc)" V=s 2>&1 | tee build.log
-
-      - name: Validate image and packages
-        shell: bash
-        run: |
-          set -euxo pipefail
-          find bin/targets/qualcommax/ipq50xx -maxdepth 1 -type f -printf '%f %s bytes\\n'
-          UBI=$(find bin/targets/qualcommax/ipq50xx -maxdepth 1 -name '*redmi_ax3000*squashfs-factory.ubi' -print -quit)
-          test -n "$UBI"
-          SIZE=$(stat -c '%s' "$UBI")
-          echo "Factory UBI size: $SIZE bytes"
-          test "$SIZE" -le 37748736
-          sha256sum "$UBI" | tee firmware.sha256
-          cp "$UBI" cr8809-immortalwrt-custom.ubi
-          cp build.config cr8809-build.config
-
-      - name: Upload firmware and build evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: cr8809-immortalwrt-${{ github.run_number }}
-          path: |
-            cr8809-immortalwrt-custom.ubi
-            firmware.sha256
-            cr8809-build.config
-            build.log
-            bin/targets/qualcommax/ipq50xx/packages/
-          if-no-files-found: error
-          retention-days: 30
- feeds/packages/lang/golang/golang-values.mk
-
-          # Add the Chinese AdGuard Home LuCI translation missing from the
-          # May 2026 LuCI snapshot, while keeping the app source pinned.
-          mkdir -p feeds/luci/applications/luci-app-adguardhome/po/zh_Hans
-          curl -fL --retry 3 --connect-timeout 30 -o feeds/luci/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po https://raw.githubusercontent.com/immortalwrt/luci/6da86dba37ad73cdde635f827db29ce275aebe48/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po
-          test -s feeds/luci/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po
-
-          # OpenClash's package Makefile is one directory below its Git repo root.
-          git clone --depth 1 --branch v0.47.088 https://github.com/vernesong/OpenClash.git /tmp/OpenClash
-          test -f /tmp/OpenClash/luci-app-openclash/Makefile
-          mkdir -p package/custom
-          cp -a /tmp/OpenClash/luci-app-openclash package/custom/luci-app-openclash
-          mkdir -p package/custom/luci-app-openclash/root/etc/openclash/core
-          curl -fL --retry 3 --connect-timeout 30 -o /tmp/mihomo-arm64.tar.gz https://raw.githubusercontent.com/vernesong/OpenClash/core/master/meta/clash-linux-arm64.tar.gz
-          tar -tzf /tmp/mihomo-arm64.tar.gz | grep -qx clash
-          tar -xzf /tmp/mihomo-arm64.tar.gz -C /tmp clash
-          install -m 0755 /tmp/clash package/custom/luci-app-openclash/root/etc/openclash/core/clash_meta
-
-          test -f feeds/packages/net/adguardhome/Makefile
-          test -f feeds/luci/applications/luci-app-adguardhome/Makefile
-          test -f package/custom/luci-app-openclash/Makefile
-
-      - name: Configure CR8809
-        run: |
-          cp builder/configs/cr8809.config .config
-          make defconfig
-          ./scripts/diffconfig.sh > build.config
-          grep -q 'CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_redmi_ax3000=y' .config
-          grep -q 'CONFIG_PACKAGE_luci-app-openclash=y' .config
-          grep -q 'CONFIG_PACKAGE_adguardhome=y' .config
-          grep -q 'CONFIG_PACKAGE_luci-app-adguardhome=y' .config
-
-      - name: Download sources
-        run: make download -j8
-
-      - name: Build firmware
-        shell: bash
-        run: |
-          set -o pipefail
-          make -j"$(nproc)" V=s 2>&1 | tee build.log
-
-      - name: Validate image and packages
-        shell: bash
-        run: |
-          set -euxo pipefail
-          find bin/targets/qualcommax/ipq50xx -maxdepth 1 -type f -printf '%f %s bytes\\n'
-          UBI=$(find bin/targets/qualcommax/ipq50xx -maxdepth 1 -name '*redmi_ax3000*squashfs-factory.ubi' -print -quit)
-          test -n "$UBI"
-          SIZE=$(stat -c '%s' "$UBI")
-          echo "Factory UBI size: $SIZE bytes"
-          test "$SIZE" -le 37748736
-          sha256sum "$UBI" | tee firmware.sha256
-          cp "$UBI" cr8809-immortalwrt-custom.ubi
-          cp build.config cr8809-build.config
-
-      - name: Upload firmware and build evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: cr8809-immortalwrt-${{ github.run_number }}
-          path: |
-            cr8809-immortalwrt-custom.ubi
-            firmware.sha256
-            cr8809-build.config
-            build.log
-            bin/targets/qualcommax/ipq50xx/packages/
-          if-no-files-found: error
-          retention-days: 30
- feeds/packages/lang/golang/golang-values.mk
-
-          # Add the Chinese AdGuard Home LuCI translation missing from the
-          # May 2026 LuCI snapshot, while keeping the app source pinned.
-          mkdir -p feeds/luci/applications/luci-app-adguardhome/po/zh_Hans
-          curl -fL --retry 3 --connect-timeout 30 -o feeds/luci/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po https://raw.githubusercontent.com/immortalwrt/luci/6da86dba37ad73cdde635f827db29ce275aebe48/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po
-          test -s feeds/luci/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po
-
-          # OpenClash's package Makefile is one directory below its Git repo root.
-          git clone --depth 1 --branch v0.47.088 https://github.com/vernesong/OpenClash.git /tmp/OpenClash
-          test -f /tmp/OpenClash/luci-app-openclash/Makefile
-          mkdir -p package/custom
-          cp -a /tmp/OpenClash/luci-app-openclash package/custom/luci-app-openclash
-          mkdir -p package/custom/luci-app-openclash/root/etc/openclash/core
-          curl -fL --retry 3 --connect-timeout 30 -o /tmp/mihomo-arm64.tar.gz https://raw.githubusercontent.com/vernesong/OpenClash/core/master/meta/clash-linux-arm64.tar.gz
-          tar -tzf /tmp/mihomo-arm64.tar.gz | grep -qx clash
-          tar -xzf /tmp/mihomo-arm64.tar.gz -C /tmp clash
-          install -m 0755 /tmp/clash package/custom/luci-app-openclash/root/etc/openclash/core/clash_meta
-
-          test -f feeds/packages/net/adguardhome/Makefile
-          test -f feeds/luci/applications/luci-app-adguardhome/Makefile
-          test -f package/custom/luci-app-openclash/Makefile
-
-      - name: Configure CR8809
-        run: |
-          cp builder/configs/cr8809.config .config
-          make defconfig
-          ./scripts/diffconfig.sh > build.config
-          grep -q 'CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_redmi_ax3000=y' .config
-          grep -q 'CONFIG_PACKAGE_luci-app-openclash=y' .config
-          grep -q 'CONFIG_PACKAGE_adguardhome=y' .config
-          grep -q 'CONFIG_PACKAGE_luci-app-adguardhome=y' .config
-
-      - name: Download sources
-        run: make download -j8
+          make package/feeds/packages/golang/host/compile -j2 V=s
+          test -x staging_dir/hostpkg/lib/go-1.26/bin/go
+          staging_dir/hostpkg/lib/go-1.26/bin/go version
+          staging_dir/hostpkg/lib/go-1.26/bin/go version | grep -q 'go1.26.2'
 
       - name: Build firmware
         shell: bash

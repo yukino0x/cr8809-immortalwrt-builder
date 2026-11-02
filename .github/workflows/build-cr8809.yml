@@ -43,22 +43,48 @@ jobs:
         run: |
           set -euxo pipefail
           ./scripts/feeds update -a
+
+          # Feed clones are shallow; explicitly fetch the exact pinned commits.
+          git -C feeds/packages fetch --depth=1 origin 39f4c789babdc98a9f13205b96301842f2d1a9ec
+          git -C feeds/luci fetch --depth=1 origin 55a4b33aafe74aeda6984f80d98750286204dd79
+          git -C feeds/routing fetch --depth=1 origin 776e7160636a7f1add27483ac926dadeb248bb65
+          git -C feeds/telephony fetch --depth=1 origin e2c5adab62e25eddeff3e52d4678163f6c9a6c3a
+          git -C feeds/video fetch --depth=1 origin 060d917e7068e13e4659aaae92df4c81c6f2e5be
+          git -C feeds/zcopapp fetch --depth=1 origin 95000137987cb750898fea3b2c01eb70f0c79c7e
+          git -C feeds/cr881xwanmode fetch --depth=1 origin cca0d4f8bce6171ffe7785082d67792004b6ca30
+          git -C feeds/wanconduit fetch --depth=1 origin 6b187cb4644de43b114164ab8ab9a1bdfe62f2e5
+
           git -C feeds/packages checkout 39f4c789babdc98a9f13205b96301842f2d1a9ec
-          git -C feeds/luci checkout 6da86dba37ad73cdde635f827db29ce275aebe48
+          git -C feeds/luci checkout 55a4b33aafe74aeda6984f80d98750286204dd79
           git -C feeds/routing checkout 776e7160636a7f1add27483ac926dadeb248bb65
           git -C feeds/telephony checkout e2c5adab62e25eddeff3e52d4678163f6c9a6c3a
           git -C feeds/video checkout 060d917e7068e13e4659aaae92df4c81c6f2e5be
+          git -C feeds/zcopapp checkout 95000137987cb750898fea3b2c01eb70f0c79c7e
+          git -C feeds/cr881xwanmode checkout cca0d4f8bce6171ffe7785082d67792004b6ca30
+          git -C feeds/wanconduit checkout 6b187cb4644de43b114164ab8ab9a1bdfe62f2e5
+
           ./scripts/feeds install -a
+
+          # Add the Chinese AdGuard Home LuCI translation missing from the
+          # May 2026 LuCI snapshot, while keeping the app source pinned.
+          mkdir -p feeds/luci/applications/luci-app-adguardhome/po/zh_Hans
+          curl -fL --retry 3 --connect-timeout 30 -o feeds/luci/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po https://raw.githubusercontent.com/immortalwrt/luci/6da86dba37ad73cdde635f827db29ce275aebe48/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po
+          test -s feeds/luci/applications/luci-app-adguardhome/po/zh_Hans/adguardhome.po
+
+          # OpenClash's package Makefile is one directory below its Git repo root.
+          git clone --depth 1 --branch v0.47.088 https://github.com/vernesong/OpenClash.git /tmp/OpenClash
+          test -f /tmp/OpenClash/luci-app-openclash/Makefile
           mkdir -p package/custom
-          git clone --depth 1 --branch v0.47.088 https://github.com/vernesong/OpenClash.git package/custom/OpenClash
-          test -f package/custom/OpenClash/luci-app-openclash/Makefile
-          mkdir -p package/custom/OpenClash/luci-app-openclash/root/etc/openclash/core
+          cp -a /tmp/OpenClash/luci-app-openclash package/custom/luci-app-openclash
+          mkdir -p package/custom/luci-app-openclash/root/etc/openclash/core
           curl -fL --retry 3 --connect-timeout 30 -o /tmp/mihomo-arm64.tar.gz https://raw.githubusercontent.com/vernesong/OpenClash/core/master/meta/clash-linux-arm64.tar.gz
           tar -tzf /tmp/mihomo-arm64.tar.gz | grep -qx clash
           tar -xzf /tmp/mihomo-arm64.tar.gz -C /tmp clash
-          install -m 0755 /tmp/clash package/custom/OpenClash/luci-app-openclash/root/etc/openclash/core/clash_meta
+          install -m 0755 /tmp/clash package/custom/luci-app-openclash/root/etc/openclash/core/clash_meta
+
           test -f feeds/packages/net/adguardhome/Makefile
           test -f feeds/luci/applications/luci-app-adguardhome/Makefile
+          test -f package/custom/luci-app-openclash/Makefile
 
       - name: Configure CR8809
         run: |

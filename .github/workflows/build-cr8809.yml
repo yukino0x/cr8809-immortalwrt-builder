@@ -32,6 +32,7 @@ jobs:
           repository: zcop/immortalwrt
           ref: 2db347236cb6fa1ca9fea893d93b1cbc6085e073
           fetch-depth: 1
+          clean: false
 
       - name: Install build dependencies
         run: |

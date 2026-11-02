@@ -20,6 +20,12 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     steps:
+      - name: Checkout builder configuration
+        uses: actions/checkout@v4
+        with:
+          path: builder
+          ref: build/cr8809-custom
+
       - name: Checkout pinned zcop source
         uses: actions/checkout@v4
         with:
@@ -46,12 +52,17 @@ jobs:
           mkdir -p package/custom
           git clone --depth 1 --branch v0.47.088 https://github.com/vernesong/OpenClash.git package/custom/OpenClash
           test -f package/custom/OpenClash/luci-app-openclash/Makefile
+          mkdir -p package/custom/OpenClash/luci-app-openclash/root/etc/openclash/core
+          curl -fL --retry 3 --connect-timeout 30 -o /tmp/mihomo-arm64.tar.gz https://raw.githubusercontent.com/vernesong/OpenClash/core/master/meta/clash-linux-arm64.tar.gz
+          tar -tzf /tmp/mihomo-arm64.tar.gz | grep -qx clash
+          tar -xzf /tmp/mihomo-arm64.tar.gz -C /tmp clash
+          install -m 0755 /tmp/clash package/custom/OpenClash/luci-app-openclash/root/etc/openclash/core/clash_meta
           test -f feeds/packages/net/adguardhome/Makefile
           test -f feeds/luci/applications/luci-app-adguardhome/Makefile
 
       - name: Configure CR8809
         run: |
-          cp configs/cr8809.config .config
+          cp builder/configs/cr8809.config .config
           make defconfig
           ./scripts/diffconfig.sh > build.config
           grep -q 'CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_redmi_ax3000=y' .config

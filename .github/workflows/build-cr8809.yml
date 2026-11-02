@@ -20,19 +20,20 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     steps:
-      - name: Checkout builder configuration
-        uses: actions/checkout@v4
-        with:
-          path: builder
-          ref: build/cr8809-custom
-
       - name: Checkout pinned zcop source
         uses: actions/checkout@v4
         with:
           repository: zcop/immortalwrt
           ref: 2db347236cb6fa1ca9fea893d93b1cbc6085e073
           fetch-depth: 1
-          clean: false
+
+      # Checkout the builder repo AFTER zcop: checking out zcop at the workspace
+      # root initializes a new Git worktree and removes pre-existing contents.
+      - name: Checkout builder configuration
+        uses: actions/checkout@v4
+        with:
+          path: builder
+          ref: build/cr8809-custom
 
       - name: Install build dependencies
         run: |
